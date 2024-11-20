@@ -11,19 +11,19 @@ from tqdm import tqdm
 
 from ..src.model import Questioner
 
-HIDDEN_DIM = 128
-QUESTION_VECTOR_SIZE = 32
-CONTEXT_VECTOR_SIZE = 32
+HIDDEN_DIM = 256
+QUESTION_VECTOR_SIZE = 64
+CONTEXT_VECTOR_SIZE = 64
 QUESTIONS_PER_LAYER = 16
 NUM_LAYERS = 16
-NUM_CLASSES = 10
+NUM_CLASSES = 100
+BATCH_SIZE = 128
 
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.float32
-EPOCHS = 40
-BATCH_SIZE = 64
-LR = 1e-4
+EPOCHS = 100
+LR = 1e-3
 COMPILE = False
 SAVE = False
 
@@ -49,6 +49,9 @@ model = Questioner(
 )
 model = model.to(DEVICE)
 model = model.to(DTYPE)
+
+if COMPILE:
+    model = torch.compile(model, dynamic=True)
 
 num_params = sum(p.numel() for p in model.parameters())
 print(f"{num_params:,} trainable parameters")

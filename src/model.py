@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch.nn.functional as F
 import torch
 from torch import Tensor
 from typing import Tuple
@@ -39,6 +40,9 @@ def get_rotary_position_vectors(meshgrid_shape, dim, device):
 
     return positions
 
+def hypersphere(x):
+    return F.normalize(x, p=2, dim=-1) * math.sqrt(x.shape[-1])
+
 
 class Questioner(nn.Module):
     def __init__(
@@ -70,10 +74,11 @@ class Questioner(nn.Module):
             nn.Linear(
                 self.questions_per_layer + self.context_vector_size, self.hidden_dim
             ),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(
                 self.hidden_dim,
                 self.questions_per_layer * self.question_vector_size
+                + self.questions_per_layer
                 + self.context_vector_size,
             ),
         )
@@ -82,7 +87,7 @@ class Questioner(nn.Module):
             nn.Linear(
                 self.questions_per_layer + self.context_vector_size, self.hidden_dim
             ),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(self.hidden_dim, self.num_classes),
         )
 
@@ -113,6 +118,7 @@ class Questioner(nn.Module):
 
         posenc = self.rotary_positions_cache.unsqueeze(0)
 
+        tokens = hypersphere(tokens)
         tokens = tokens * posenc
 
         questions = self.initial_questions
@@ -121,6 +127,7 @@ class Questioner(nn.Module):
             tokens.unsqueeze(-1),  # (b, seq, qdim, 1)
         )
         # (b, seq, qnum, qdim) @ (b, seq, qdim, 1) -> (b, seq, qnum, 1)
+        # answers = torch.sigmoid(answers)
         answers = torch.squeeze(answers, dim=-1)  # (b, seq, qnum)
         answers = torch.mean(answers, dim=1)  # (b, qnum)
 
@@ -140,6 +147,7 @@ class Questioner(nn.Module):
                 self.questions_per_layer,
                 self.question_vector_size,
             )
+            
             context = context + output_from_brain[..., -self.context_vector_size :]
 
             answers = torch.matmul(
