@@ -14,12 +14,12 @@ from ..src.model import Questioner
 HIDDEN_DIM = 128
 QUESTION_VECTOR_SIZE = 32
 CONTEXT_VECTOR_SIZE = 32
-QUESTIONS_PER_LAYER = 4
+QUESTIONS_PER_LAYER = 16
 NUM_LAYERS = 16
 NUM_CLASSES = 10
 
 
-DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.float32
 EPOCHS = 40
 BATCH_SIZE = 64
