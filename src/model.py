@@ -26,19 +26,29 @@ def get_rotary_position_vectors(meshgrid_shape, dim, device):
     freq_bands = []
 
     assert dim % 2 == 0, "dim must be even"
-    num_frequencies = dim // 2
+    assert dim % len(meshgrid_shape) == 0, "dim must be divisible by number of dimensions"
+    num_frequencies = dim // (len(meshgrid_shape) * 2)
 
     for freq_idx in range(1, num_frequencies + 1):
         for pe_axis in range(len(meshgrid_shape)):
             pos = positions[..., pe_axis] * (
                 1 / (10000 ** (freq_idx / (num_frequencies)))
             )
-            freq_bands.append(torch.cos(pos))
-            freq_bands.append(torch.sin(pos))
+            freq_bands.append(torch.stack([torch.sin(pos), torch.cos(pos)], dim=-1)) # *meshgrid_shape, dim
 
-    positions = torch.stack(freq_bands, dim=-1)  # *meshgrid_shape, dim
+    positions = torch.stack(freq_bands, dim=-2)  # *meshgrid_shape, dim//2, 2
+    positions = torch.view_as_complex(positions) # *meshgrid_shape, dim//2
 
     return positions
+
+def apply_rotary_position_encoding(x, positions):
+    original_shape = x.shape
+    x = x.view(*x.shape[:-1], -1, 2)
+    x = torch.view_as_complex(x)
+    x = x * positions
+    x = torch.view_as_real(x)
+    x = x.view(*original_shape)
+    return x
 
 def hypersphere(x):
     return F.normalize(x, p=2, dim=-1) * math.sqrt(x.shape[-1])
@@ -98,16 +108,16 @@ class Questioner(nn.Module):
 
         batch_size = tokens.shape[0]
         input_channels = tokens.shape[-1]
-
-        tokens = tokens.view(batch_size, -1, input_channels)
-
-        # tokens: (b, seq, input_channels)
+        
+        tokens = tokens.reshape(batch_size, -1, input_channels)  # (b, *seq, input_channels)
         batch_size, sequence_length, input_channels = tokens.shape
 
-        tokens = self.color_embedding(tokens)  # (b, seq, qdim)
+        # tokens: (b, *seq, input_channels)
+
+        tokens = self.color_embedding(tokens)  # (b, *seq, qdim)
 
         shape_is_none = self.input_shape is None
-        shape_is_different = self.input_shape != (sequence_length, input_channels)
+        shape_is_different = self.input_shape != sequence_length
         if shape_is_none or shape_is_different:
             self.input_shape = (sequence_length, input_channels)
             self.rotary_positions_cache = get_rotary_position_vectors(
@@ -119,7 +129,7 @@ class Questioner(nn.Module):
         posenc = self.rotary_positions_cache.unsqueeze(0)
 
         tokens = hypersphere(tokens)
-        tokens = tokens * posenc
+        tokens = apply_rotary_position_encoding(tokens, posenc)
 
         questions = self.initial_questions
         answers = torch.matmul(
